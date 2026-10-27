@@ -11,6 +11,12 @@ sealed interface InputEvent {
         val isEnd: Boolean = false
     ) : InputEvent
 
+    data class Erase(
+        val point: StrokePoint,
+        val isStart: Boolean = false,
+        val isEnd: Boolean = false
+    ) : InputEvent
+
     data class Gesture(
         val scaleDelta: Float,
         val panX: Float,
@@ -20,19 +26,21 @@ sealed interface InputEvent {
     data object ToggleEraser : InputEvent
 }
 
+data class PointerData(
+    val id: Int,
+    val toolType: Int,
+    val x: Float,
+    val y: Float,
+    val pressure: Float = 0.5f,
+    val tilt: Float = 0.0f
+)
+
 class CanvasGestureListener(
     val classifier: StylusInputClassifier = StylusInputClassifier(),
     private val onInputEvent: (InputEvent) -> Unit = {}
 ) {
-    // Stylus button state tracking (for M-Pencil barrel button toggle)
+    // Stylus button state tracking (strictly M-Pencil barrel button BUTTON_STYLUS_PRIMARY)
     private var lastButtonState: Int = 0
-
-    // Double-tap tracking for M-Pencil / stylus
-    private var lastStylusDownTime: Long = 0L
-    private var lastStylusDownX: Float = 0f
-    private var lastStylusDownY: Float = 0f
-    var doubleTapTimeoutMs: Long = 300L
-    var doubleTapSlop: Float = 40f
 
     // Two-finger pan & zoom tracking
     private var prevSpan: Float = 0f
@@ -40,228 +48,245 @@ class CanvasGestureListener(
     private var prevFocusY: Float = 0f
     private var isGesturing: Boolean = false
 
+    companion object {
+        fun stylusPointer(id: Int = 0, x: Float, y: Float, pressure: Float = 0.5f, tilt: Float = 0.0f): PointerData =
+            PointerData(id = id, toolType = MotionEvent.TOOL_TYPE_STYLUS, x = x, y = y, pressure = pressure, tilt = tilt)
+
+        fun eraserPointer(id: Int = 0, x: Float, y: Float, pressure: Float = 0.5f, tilt: Float = 0.0f): PointerData =
+            PointerData(id = id, toolType = MotionEvent.TOOL_TYPE_ERASER, x = x, y = y, pressure = pressure, tilt = tilt)
+
+        fun fingerPointer(id: Int = 0, x: Float, y: Float): PointerData =
+            PointerData(id = id, toolType = MotionEvent.TOOL_TYPE_FINGER, x = x, y = y, pressure = 0.0f, tilt = 0.0f)
+    }
+
+    private fun isStylus(toolType: Int): Boolean =
+        toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
+
+    private fun isEraser(toolType: Int): Boolean =
+        toolType == MotionEvent.TOOL_TYPE_ERASER
+
     fun onTouchEvent(event: MotionEvent): Boolean {
-        // 1. Stylus button check (M-Pencil primary button)
+        // 1. Stylus button check: strictly BUTTON_STYLUS_PRIMARY (ignoring digitizer pen-tip BUTTON_PRIMARY)
         val buttonState = event.buttonState
-        val isStylusButtonPressed = (buttonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_PRIMARY)) != 0
-        val wasStylusButtonPressed = (lastButtonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_PRIMARY)) != 0
+        checkStylusButton(buttonState)
+
+        val pointerCount = event.pointerCount
+        val actionMasked = event.actionMasked
+        val actionIndex = event.actionIndex
+
+        // Extract historical points for ultra-low latency 120Hz inking on ACTION_MOVE
+        if (actionMasked == MotionEvent.ACTION_MOVE && classifier.isStylusActive) {
+            var stylusIndex = -1
+            for (i in 0 until pointerCount) {
+                if (isStylus(event.getToolType(i))) {
+                    stylusIndex = i
+                    break
+                }
+            }
+            if (stylusIndex >= 0) {
+                val isEraserTool = isEraser(event.getToolType(stylusIndex))
+                val historySize = event.historySize
+                for (h in 0 until historySize) {
+                    val histPoint = StrokePoint(
+                        x = event.getHistoricalX(stylusIndex, h),
+                        y = event.getHistoricalY(stylusIndex, h),
+                        pressure = event.getHistoricalPressure(stylusIndex, h),
+                        tilt = event.getHistoricalAxisValue(MotionEvent.AXIS_TILT, stylusIndex, h)
+                    )
+                    if (isEraserTool) {
+                        emit(InputEvent.Erase(histPoint))
+                    } else {
+                        emit(InputEvent.Draw(histPoint))
+                    }
+                }
+            }
+        }
+
+        // Convert current MotionEvent pointers to PointerData
+        val pointers = ArrayList<PointerData>(pointerCount)
+        for (i in 0 until pointerCount) {
+            pointers.add(
+                PointerData(
+                    id = event.getPointerId(i),
+                    toolType = event.getToolType(i),
+                    x = event.getX(i),
+                    y = event.getY(i),
+                    pressure = event.getPressure(i),
+                    tilt = event.getAxisValue(MotionEvent.AXIS_TILT, i)
+                )
+            )
+        }
+
+        return processPointers(actionMasked, actionIndex, pointers)
+    }
+
+    // Overload for testing multi-touch lifecycles and direct dispatch
+    fun onTouchEvent(
+        actionMasked: Int,
+        actionIndex: Int = 0,
+        pointers: List<PointerData>,
+        buttonState: Int = 0
+    ): Boolean {
+        checkStylusButton(buttonState)
+        return processPointers(actionMasked, actionIndex, pointers)
+    }
+
+    private fun checkStylusButton(buttonState: Int) {
+        val isStylusButtonPressed = (buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0
+        val wasStylusButtonPressed = (lastButtonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0
         if (isStylusButtonPressed && !wasStylusButtonPressed) {
             emit(InputEvent.ToggleEraser)
         }
         lastButtonState = buttonState
+    }
 
-        val pointerCount = event.pointerCount
-
-        // 2. Determine if stylus is interacting
-        var stylusPointerIndex = -1
-        for (i in 0 until pointerCount) {
-            val toolType = event.getToolType(i)
-            if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
-                stylusPointerIndex = i
-                break
-            }
-        }
-
-        val isStylus = stylusPointerIndex >= 0
-        val actionMasked = event.actionMasked
-
-        if (isStylus) {
-            when (actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
+    private fun processPointers(
+        actionMasked: Int,
+        actionIndex: Int,
+        pointers: List<PointerData>
+    ): Boolean {
+        when (actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val p = pointers.getOrNull(actionIndex) ?: pointers.firstOrNull() ?: return false
+                if (isStylus(p.toolType)) {
                     classifier.onStylusDown()
-                    val x = event.getX(stylusPointerIndex)
-                    val y = event.getY(stylusPointerIndex)
-                    checkStylusDoubleTap(event.eventTime, x, y)
-                    emit(InputEvent.Draw(createStrokePoint(event, stylusPointerIndex), isStart = true))
+                    emitStylusStart(p)
+                } else {
+                    // Single finger touch - rejected for drawing, gestures require 2 fingers
+                    isGesturing = false
+                    prevSpan = 0f
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    // Extract historical points for ultra-low latency 120Hz fidelity
-                    val historySize = event.historySize
-                    for (h in 0 until historySize) {
-                        emit(
-                            InputEvent.Draw(
-                                StrokePoint(
-                                    x = event.getHistoricalX(stylusPointerIndex, h),
-                                    y = event.getHistoricalY(stylusPointerIndex, h),
-                                    pressure = event.getHistoricalPressure(stylusPointerIndex, h),
-                                    tilt = event.getHistoricalAxisValue(MotionEvent.AXIS_TILT, stylusPointerIndex, h)
-                                )
-                            )
-                        )
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                val p = pointers.getOrNull(actionIndex) ?: return false
+                if (isStylus(p.toolType)) {
+                    // Stylus touched down while resting palm or another finger was already down
+                    classifier.onStylusDown()
+                    emitStylusStart(p)
+                } else {
+                    // Another finger touched down
+                    if (classifier.isStylusActive) {
+                        // Palm rejection: ignore while stylus is active
+                    } else if (pointers.size >= 2) {
+                        // Start two-finger pan/zoom gesture
+                        initGesture(pointers[0], pointers[1])
                     }
-                    emit(InputEvent.Draw(createStrokePoint(event, stylusPointerIndex)))
                 }
-                MotionEvent.ACTION_UP -> {
-                    classifier.onStylusUp()
-                    emit(InputEvent.Draw(createStrokePoint(event, stylusPointerIndex), isEnd = true))
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    classifier.onStylusUp()
-                }
-            }
-            return true
-        }
-
-        // 3. Finger / Palm touch classification
-        val classification = classifier.classifyPointer(isStylus = false, pointerCount = pointerCount)
-        when (classification) {
-            StylusInputClassifier.Action.IGNORE_PALM -> {
-                // Single finger touch or palm resting while writing - rejected
                 return true
             }
-            StylusInputClassifier.Action.PAN_ZOOM_GESTURE -> {
-                handleMultiTouchPanZoom(event)
-                return true
-            }
-            StylusInputClassifier.Action.DRAW -> {
-                // Drawing is reserved for stylus
-                return true
-            }
-        }
-    }
 
-    private fun checkStylusDoubleTap(eventTime: Long, x: Float, y: Float) {
-        val dt = eventTime - lastStylusDownTime
-        val dx = x - lastStylusDownX
-        val dy = y - lastStylusDownY
-        val slopSq = doubleTapSlop * doubleTapSlop
-        if (dt in 40..doubleTapTimeoutMs && (dx * dx + dy * dy) <= slopSq) {
-            emit(InputEvent.ToggleEraser)
-            lastStylusDownTime = 0L // reset after double-tap
-        } else {
-            lastStylusDownTime = eventTime
-            lastStylusDownX = x
-            lastStylusDownY = y
-        }
-    }
-
-    private fun handleMultiTouchPanZoom(event: MotionEvent) {
-        if (event.pointerCount < 2) {
-            isGesturing = false
-            prevSpan = 0f
-            return
-        }
-
-        val x0 = event.getX(0)
-        val y0 = event.getY(0)
-        val x1 = event.getX(1)
-        val y1 = event.getY(1)
-
-        val focusX = (x0 + x1) / 2f
-        val focusY = (y0 + y1) / 2f
-        val span = hypot(x1 - x0, y1 - y0)
-
-        when (event.actionMasked) {
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
-                prevFocusX = focusX
-                prevFocusY = focusY
-                prevSpan = span
-                isGesturing = true
-            }
             MotionEvent.ACTION_MOVE -> {
-                if (isGesturing && prevSpan > 0f) {
-                    val scaleDelta = if (span > 0f) span / prevSpan else 1.0f
-                    val panX = focusX - prevFocusX
-                    val panY = focusY - prevFocusY
-
-                    emit(InputEvent.Gesture(scaleDelta = scaleDelta, panX = panX, panY = panY))
+                // If stylus is active, ink/erase for the stylus pointer
+                val stylus = pointers.firstOrNull { isStylus(it.toolType) }
+                if (stylus != null && classifier.isStylusActive) {
+                    emitStylusMove(stylus)
+                } else if (!classifier.isStylusActive && pointers.size >= 2) {
+                    // Two-finger pan & zoom
+                    updateGesture(pointers[0], pointers[1])
                 }
-                prevFocusX = focusX
-                prevFocusY = focusY
-                prevSpan = span
-                isGesturing = true
+                return true
             }
-            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                val p = pointers.getOrNull(actionIndex) ?: return false
+                if (isStylus(p.toolType)) {
+                    // Stylus lifted while palm is still on screen
+                    classifier.onStylusUp()
+                    emitStylusEnd(p)
+                } else {
+                    val remainingCount = pointers.size - 1
+                    if (remainingCount < 2) {
+                        isGesturing = false
+                        prevSpan = 0f
+                    }
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                val p = pointers.getOrNull(actionIndex) ?: pointers.firstOrNull()
+                if (p != null && isStylus(p.toolType)) {
+                    classifier.onStylusUp()
+                    emitStylusEnd(p)
+                }
+                if (classifier.isStylusActive) {
+                    classifier.onStylusUp()
+                }
                 isGesturing = false
                 prevSpan = 0f
+                return true
             }
+
+            MotionEvent.ACTION_CANCEL -> {
+                if (classifier.isStylusActive) {
+                    classifier.onStylusUp()
+                }
+                isGesturing = false
+                prevSpan = 0f
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun emitStylusStart(p: PointerData) {
+        val pt = StrokePoint(p.x, p.y, p.pressure, p.tilt)
+        if (isEraser(p.toolType)) {
+            emit(InputEvent.Erase(pt, isStart = true))
+        } else {
+            emit(InputEvent.Draw(pt, isStart = true))
         }
     }
 
-    private fun createStrokePoint(event: MotionEvent, pointerIndex: Int): StrokePoint {
-        return StrokePoint(
-            x = event.getX(pointerIndex),
-            y = event.getY(pointerIndex),
-            pressure = event.getPressure(pointerIndex),
-            tilt = event.getAxisValue(MotionEvent.AXIS_TILT, pointerIndex)
-        )
+    private fun emitStylusMove(p: PointerData) {
+        val pt = StrokePoint(p.x, p.y, p.pressure, p.tilt)
+        if (isEraser(p.toolType)) {
+            emit(InputEvent.Erase(pt))
+        } else {
+            emit(InputEvent.Draw(pt))
+        }
+    }
+
+    private fun emitStylusEnd(p: PointerData) {
+        val pt = StrokePoint(p.x, p.y, p.pressure, p.tilt)
+        if (isEraser(p.toolType)) {
+            emit(InputEvent.Erase(pt, isEnd = true))
+        } else {
+            emit(InputEvent.Draw(pt, isEnd = true))
+        }
+    }
+
+    private fun initGesture(p0: PointerData, p1: PointerData) {
+        prevFocusX = (p0.x + p1.x) / 2f
+        prevFocusY = (p0.y + p1.y) / 2f
+        prevSpan = hypot(p1.x - p0.x, p1.y - p0.y)
+        isGesturing = true
+    }
+
+    private fun updateGesture(p0: PointerData, p1: PointerData) {
+        val focusX = (p0.x + p1.x) / 2f
+        val focusY = (p0.y + p1.y) / 2f
+        val span = hypot(p1.x - p0.x, p1.y - p0.y)
+
+        if (isGesturing && prevSpan > 0f) {
+            val scaleDelta = if (span > 0f) span / prevSpan else 1.0f
+            val panX = focusX - prevFocusX
+            val panY = focusY - prevFocusY
+            emit(InputEvent.Gesture(scaleDelta = scaleDelta, panX = panX, panY = panY))
+        }
+        prevFocusX = focusX
+        prevFocusY = focusY
+        prevSpan = span
+        isGesturing = true
     }
 
     private fun emit(event: InputEvent) {
         onInputEvent(event)
     }
 
-    // Direct programmatic simulation methods for testing without MotionEvent
-    fun onStylusDown(
-        x: Float,
-        y: Float,
-        pressure: Float = 0.5f,
-        tilt: Float = 0.0f,
-        timeMs: Long = System.currentTimeMillis()
-    ) {
-        classifier.onStylusDown()
-        checkStylusDoubleTap(timeMs, x, y)
-        emit(InputEvent.Draw(StrokePoint(x, y, pressure, tilt), isStart = true))
-    }
-
-    fun onStylusMove(
-        x: Float,
-        y: Float,
-        pressure: Float = 0.5f,
-        tilt: Float = 0.0f
-    ) {
-        emit(InputEvent.Draw(StrokePoint(x, y, pressure, tilt)))
-    }
-
-    fun onStylusUp(
-        x: Float,
-        y: Float,
-        pressure: Float = 0.5f,
-        tilt: Float = 0.0f
-    ) {
-        classifier.onStylusUp()
-        emit(InputEvent.Draw(StrokePoint(x, y, pressure, tilt), isEnd = true))
-    }
-
-    fun onStylusCancel() {
-        classifier.onStylusUp()
-    }
-
     fun onStylusButtonPress() {
         emit(InputEvent.ToggleEraser)
-    }
-
-    fun onTwoFingerDown(x0: Float, y0: Float, x1: Float, y1: Float) {
-        if (classifier.isStylusActive) return // rejected if stylus active
-        prevFocusX = (x0 + x1) / 2f
-        prevFocusY = (y0 + y1) / 2f
-        prevSpan = hypot(x1 - x0, y1 - y0)
-        isGesturing = true
-    }
-
-    fun onTwoFingerMove(x0: Float, y0: Float, x1: Float, y1: Float) {
-        if (classifier.isStylusActive) return // rejected if stylus active
-        if (!isGesturing || prevSpan <= 0f) {
-            onTwoFingerDown(x0, y0, x1, y1)
-            return
-        }
-        val focusX = (x0 + x1) / 2f
-        val focusY = (y0 + y1) / 2f
-        val span = hypot(x1 - x0, y1 - y0)
-
-        val scaleDelta = if (span > 0f) span / prevSpan else 1.0f
-        val panX = focusX - prevFocusX
-        val panY = focusY - prevFocusY
-
-        prevFocusX = focusX
-        prevFocusY = focusY
-        prevSpan = span
-
-        emit(InputEvent.Gesture(scaleDelta = scaleDelta, panX = panX, panY = panY))
-    }
-
-    fun onTwoFingerUp() {
-        isGesturing = false
-        prevSpan = 0f
     }
 }
