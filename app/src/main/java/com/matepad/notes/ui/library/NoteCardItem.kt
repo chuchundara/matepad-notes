@@ -1,5 +1,6 @@
 package com.matepad.notes.ui.library
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -195,7 +196,7 @@ private fun NoteThumbnail(
     gridStyle: String,
     modifier: Modifier = Modifier
 ) {
-    val bitmap by produceState<Bitmap?>(initialValue = null, previewPath) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = previewPath) {
         value = withContext(Dispatchers.IO) {
             if (previewPath != null) {
                 val file = File(previewPath)
@@ -212,9 +213,10 @@ private fun NoteThumbnail(
             .background(Color.White),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
+        val currentBitmap = bitmap
+        if (currentBitmap != null) {
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = currentBitmap.asImageBitmap(),
                 contentDescription = "Note preview",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

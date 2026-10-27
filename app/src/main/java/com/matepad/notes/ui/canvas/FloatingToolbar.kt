@@ -103,7 +103,7 @@ fun FloatingToolbar(
         if (isVertical) {
             Column(
                 modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
-                horizontalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Dedicated drag handle box
@@ -177,14 +177,76 @@ fun FloatingToolbar(
                 )
 
                 // Color swatch trigger
-                ColorSwatchButton(
-                    currentColor = state.selectedColor,
-                    onClick = { showColorMenu = true }
-                )
+                Box {
+                    ColorSwatchButton(
+                        currentColor = state.selectedColor,
+                        onClick = { showColorMenu = true }
+                    )
+
+                    DropdownMenu(
+                        expanded = showColorMenu,
+                        onDismissRequest = { showColorMenu = false }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PresetInkColors.forEach { colorInt ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(colorInt))
+                                        .then(
+                                            if (state.selectedColor == colorInt) {
+                                                Modifier.border(
+                                                    2.dp,
+                                                    MaterialTheme.colorScheme.primary,
+                                                    CircleShape
+                                                )
+                                            } else Modifier
+                                        )
+                                        .clickable {
+                                            onColorSelected(colorInt)
+                                            showColorMenu = false
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Stroke width button
-                IconButton(onClick = { showWidthMenu = true }) {
-                    Icon(Icons.Default.LineWeight, contentDescription = "Stroke width")
+                Box {
+                    IconButton(onClick = { showWidthMenu = true }) {
+                        Icon(Icons.Default.LineWeight, contentDescription = "Stroke width")
+                    }
+
+                    DropdownMenu(
+                        expanded = showWidthMenu,
+                        onDismissRequest = { showWidthMenu = false }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .width(200.dp)
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Width: ${currentWidthSlider.roundToInt()} pt",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = currentWidthSlider,
+                                onValueChange = {
+                                    currentWidthSlider = it
+                                    onBaseWidthChanged(it)
+                                },
+                                valueRange = 1.0f..30.0f
+                            )
+                        }
+                    }
                 }
             }
         } else {

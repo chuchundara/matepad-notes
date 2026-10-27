@@ -149,14 +149,6 @@ fun CanvasScreen(
 
     var autosaveJob by remember { mutableStateOf<Job?>(null) }
 
-    // Intercept hardware/gesture back press to guarantee flush before navigation
-    BackHandler(enabled = true) {
-        coroutineScope.launch {
-            flushAutosaveNow()
-            onNavigateBack()
-        }
-    }
-
     // Immediate autosave flush routine (executes file I/O and DB operations on Dispatchers.IO)
     suspend fun flushAutosaveNow() {
         autosaveJob?.cancel()
@@ -216,6 +208,14 @@ fun CanvasScreen(
                     )
                 }
             }
+        }
+    }
+
+    // Intercept hardware/gesture back press to guarantee flush before navigation
+    BackHandler(enabled = true) {
+        coroutineScope.launch {
+            flushAutosaveNow()
+            onNavigateBack()
         }
     }
 
