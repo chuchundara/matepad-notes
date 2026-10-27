@@ -105,9 +105,9 @@ open class LibraryViewModel(
     }
 
     /**
-     * Create a new note and return its unique ID.
+     * Create a new note and return its unique ID after persistence completes.
      */
-    fun createNote(
+    suspend fun createNote(
         title: String = "Untitled Note",
         folderId: String? = _selectedFolderId.value,
         gridStyle: String = "DOTS"
@@ -125,14 +125,27 @@ open class LibraryViewModel(
         )
 
         if (noteDao != null) {
-            scope.launch {
-                noteDao.insertOrUpdateNote(note)
-            }
+            noteDao.insertOrUpdateNote(note)
         } else {
             _manualNotes.update { current -> listOf(note) + current }
         }
 
         return noteId
+    }
+
+    /**
+     * Asynchronously create a new note and invoke callback upon completion.
+     */
+    fun createNoteAsync(
+        title: String = "Untitled Note",
+        folderId: String? = _selectedFolderId.value,
+        gridStyle: String = "DOTS",
+        onCreated: (String) -> Unit = {}
+    ) {
+        scope.launch {
+            val noteId = createNote(title, folderId, gridStyle)
+            onCreated(noteId)
+        }
     }
 
     /**

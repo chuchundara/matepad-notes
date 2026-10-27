@@ -1,5 +1,6 @@
 package com.matepad.notes.ui.canvas
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -68,17 +69,29 @@ internal class CanvasAddStrokeCommand(
 }
 
 /**
- * Command for erasing strokes from [InfiniteCanvasView], supporting Undo and Redo.
+ * Command for erasing strokes from [InfiniteCanvasView], supporting Undo and Redo
+ * with Z-order preservation across stroke layers.
  */
 internal class CanvasDeleteStrokesCommand(
-    private val deletedStrokes: List<Stroke>,
+    private val deletedStrokesWithIndices: List<Pair<Int, Stroke>>,
     private val canvasView: InfiniteCanvasView
 ) : CanvasCommand {
+    constructor(
+        deletedStrokes: List<Stroke>,
+        canvasView: InfiniteCanvasView
+    ) : this(
+        deletedStrokesWithIndices = deletedStrokes.mapNotNull { stroke ->
+            val idx = canvasView.strokes.indexOf(stroke)
+            if (idx >= 0) idx to stroke else null
+        },
+        canvasView = canvasView
+    )
+
     private var isFirstExecution = true
 
     override fun execute() {
         if (!isFirstExecution) {
-            for (stroke in deletedStrokes) {
+            for ((_, stroke) in deletedStrokesWithIndices) {
                 canvasView.removeStroke(stroke)
             }
         }
@@ -86,9 +99,7 @@ internal class CanvasDeleteStrokesCommand(
     }
 
     override fun undo() {
-        for (stroke in deletedStrokes) {
-            canvasView.addStroke(stroke)
-        }
+        canvasView.restoreStrokesWithIndices(deletedStrokesWithIndices)
     }
 }
 
@@ -137,6 +148,14 @@ fun CanvasScreen(
     var toolbarFloatingOffset by remember { mutableStateOf(Offset(100f, 600f)) }
 
     var autosaveJob by remember { mutableStateOf<Job?>(null) }
+
+    // Intercept hardware/gesture back press to guarantee flush before navigation
+    BackHandler(enabled = true) {
+        coroutineScope.launch {
+            flushAutosaveNow()
+            onNavigateBack()
+        }
+    }
 
     // Immediate autosave flush routine (executes file I/O and DB operations on Dispatchers.IO)
     suspend fun flushAutosaveNow() {
@@ -383,6 +402,16 @@ fun CanvasScreen(
                             scheduleAutosave()
                         }
 
+                        onStrokesErasedWithIndices = { indexedStrokes ->
+                            commandHistory.execute(CanvasDeleteStrokesCommand(indexedStrokes, this))
+                            uiState = uiState.copy(
+                                canUndo = commandHistory.canUndo,
+                                canRedo = commandHistory.canRedo,
+                                strokeCount = strokes.size
+                            )
+                            scheduleAutosave()
+                        }
+
                         onStrokeErased = { stroke ->
                             commandHistory.execute(CanvasDeleteStrokesCommand(listOf(stroke), this))
                             uiState = uiState.copy(
@@ -391,6 +420,10 @@ fun CanvasScreen(
                                 strokeCount = strokes.size
                             )
                             scheduleAutosave()
+                        }
+
+                        onLassoSelectionChanged = { selected ->
+                            // Optional: can reflect selected stroke count or trigger transform actions
                         }
 
                         onViewportChanged = { transform ->

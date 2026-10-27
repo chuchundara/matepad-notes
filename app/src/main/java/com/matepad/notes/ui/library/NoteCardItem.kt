@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.matepad.notes.data.local.entity.NoteEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -192,13 +195,15 @@ private fun NoteThumbnail(
     gridStyle: String,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(previewPath) {
-        if (previewPath != null) {
-            val file = File(previewPath)
-            if (file.exists() && file.isFile && file.length() > 0) {
-                BitmapFactory.decodeFile(previewPath)
+    val bitmap by produceState<Bitmap?>(initialValue = null, previewPath) {
+        value = withContext(Dispatchers.IO) {
+            if (previewPath != null) {
+                val file = File(previewPath)
+                if (file.exists() && file.isFile && file.length() > 0) {
+                    BitmapFactory.decodeFile(previewPath)
+                } else null
             } else null
-        } else null
+        }
     }
 
     Box(
@@ -239,6 +244,29 @@ private fun NoteThumbnail(
                     }
                     "LINES" -> {
                         val spacing = 20.dp.toPx()
+                        var y = spacing
+                        while (y < size.height) {
+                            drawLine(
+                                color = gridColor,
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                            y += spacing
+                        }
+                    }
+                    "SQUARES" -> {
+                        val spacing = 20.dp.toPx()
+                        var x = spacing
+                        while (x < size.width) {
+                            drawLine(
+                                color = gridColor,
+                                start = Offset(x, 0f),
+                                end = Offset(x, size.height),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                            x += spacing
+                        }
                         var y = spacing
                         while (y < size.height) {
                             drawLine(

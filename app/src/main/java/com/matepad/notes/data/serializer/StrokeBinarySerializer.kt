@@ -62,6 +62,7 @@ object StrokeBinarySerializer {
                     throw IllegalArgumentException("Unsupported .note version: $version")
                 }
                 val count = input.readInt()
+                require(count >= 0) { "Stroke count cannot be negative: $count" }
 
                 for (i in 0 until count) {
                     val id = input.readUTF()
@@ -76,6 +77,7 @@ object StrokeBinarySerializer {
                     val bounds = RectF(left, top, right, bottom)
 
                     val pointCount = input.readInt()
+                    require(pointCount >= 0) { "Point count cannot be negative: $pointCount" }
                     val points = ArrayList<StrokePoint>(pointCount)
                     for (p in 0 until pointCount) {
                         points.add(

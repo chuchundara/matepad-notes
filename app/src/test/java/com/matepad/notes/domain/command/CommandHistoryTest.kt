@@ -61,12 +61,35 @@ class CommandHistoryTest {
 
         history.undo()
         assertEquals(2, strokes.size)
+        assertEquals("s1", strokes[0].id)
+        assertEquals("s2", strokes[1].id)
         assertTrue(strokes.contains(stroke1))
         assertTrue(strokes.contains(stroke2))
 
         history.redo()
         assertEquals(1, strokes.size)
         assertEquals("s2", strokes[0].id)
+    }
+
+    @Test
+    fun testDeleteStrokesPreservesZOrderOnUndo() {
+        val history = CommandHistory()
+        val s1 = createDummyStroke("s1")
+        val s2 = createDummyStroke("s2")
+        val s3 = createDummyStroke("s3")
+        val strokes = mutableListOf(s1, s2, s3)
+
+        // Delete middle stroke s2
+        val deleteCmd = DeleteStrokesCommand(listOf(s2), strokes)
+        history.execute(deleteCmd)
+        assertEquals(listOf(s1, s3), strokes)
+
+        history.undo()
+        // s2 must be restored at original index 1, preserving Z-order
+        assertEquals(listOf(s1, s2, s3), strokes)
+        assertEquals("s1", strokes[0].id)
+        assertEquals("s2", strokes[1].id)
+        assertEquals("s3", strokes[2].id)
     }
 
     @Test

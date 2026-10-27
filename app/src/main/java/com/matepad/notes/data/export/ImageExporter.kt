@@ -7,6 +7,7 @@ import android.os.Build
 import com.matepad.notes.domain.geometry.RectF
 import com.matepad.notes.domain.model.Stroke
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -54,7 +55,7 @@ object ImageExporter {
         bounds: RectF,
         scale: Float = 1.0f,
         margin: Float = 20f,
-        maxDimension: Int? = null,
+        maxDimension: Int? = 4096,
         minDimension: Int = 1
     ): Dimensions {
         val safeMargin = max(0f, margin)
@@ -106,7 +107,7 @@ object ImageExporter {
         scale: Float = 1.0f,
         margin: Float = 20f,
         backgroundColor: Int? = Color.WHITE,
-        maxDimension: Int? = null
+        maxDimension: Int? = 4096
     ): Bitmap {
         val effectiveBounds = bounds ?: PdfExporter.calculateEnclosingBounds(strokes, filterDrawableOnly = true)
         val dims = calculateDimensions(
@@ -161,7 +162,7 @@ object ImageExporter {
         scale: Float = 1.0f,
         margin: Float = 20f,
         backgroundColor: Int? = Color.WHITE,
-        maxDimension: Int? = null
+        maxDimension: Int? = 4096
     ) {
         val bitmap = renderToBitmap(
             strokes = strokes,
@@ -174,7 +175,10 @@ object ImageExporter {
         try {
             val compressFormat = toCompressFormat(format)
             val clampedQuality = quality.coerceIn(0, 100)
-            bitmap.compress(compressFormat, clampedQuality, outputStream)
+            val success = bitmap.compress(compressFormat, clampedQuality, outputStream)
+            if (!success) {
+                throw IOException("Failed to compress bitmap into format: $format")
+            }
         } finally {
             bitmap.recycle()
         }
@@ -192,7 +196,7 @@ object ImageExporter {
         scale: Float = 1.0f,
         margin: Float = 20f,
         backgroundColor: Int? = Color.WHITE,
-        maxDimension: Int? = null
+        maxDimension: Int? = 4096
     ) {
         destination.parentFile?.mkdirs()
         destination.outputStream().use { out ->

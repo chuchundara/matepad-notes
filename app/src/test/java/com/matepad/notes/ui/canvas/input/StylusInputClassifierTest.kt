@@ -178,6 +178,8 @@ class StylusInputClassifierTest {
         assertEquals(2.0f, gestureEvents[0].scaleDelta, 0.001f)
         assertEquals(100.0f, gestureEvents[0].panX, 0.001f)
         assertEquals(20.0f, gestureEvents[0].panY, 0.001f)
+        assertEquals(200.0f, gestureEvents[0].focalPoint.x, 0.001f)
+        assertEquals(70.0f, gestureEvents[0].focalPoint.y, 0.001f)
     }
 
     @Test

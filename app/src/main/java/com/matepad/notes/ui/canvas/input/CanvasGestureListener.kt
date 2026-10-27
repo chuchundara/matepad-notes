@@ -1,6 +1,7 @@
 package com.matepad.notes.ui.canvas.input
 
 import android.view.MotionEvent
+import com.matepad.notes.domain.geometry.PointF
 import com.matepad.notes.domain.model.StrokePoint
 import kotlin.math.hypot
 
@@ -20,7 +21,8 @@ sealed interface InputEvent {
     data class Gesture(
         val scaleDelta: Float,
         val panX: Float,
-        val panY: Float
+        val panY: Float,
+        val focalPoint: PointF = PointF(0f, 0f)
     ) : InputEvent
 
     data object ToggleEraser : InputEvent
@@ -274,7 +276,14 @@ class CanvasGestureListener(
             val scaleDelta = if (span > 0f) span / prevSpan else 1.0f
             val panX = focusX - prevFocusX
             val panY = focusY - prevFocusY
-            emit(InputEvent.Gesture(scaleDelta = scaleDelta, panX = panX, panY = panY))
+            emit(
+                InputEvent.Gesture(
+                    scaleDelta = scaleDelta,
+                    panX = panX,
+                    panY = panY,
+                    focalPoint = PointF(focusX, focusY)
+                )
+            )
         }
         prevFocusX = focusX
         prevFocusY = focusY

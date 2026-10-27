@@ -227,9 +227,12 @@ class IntegrationVerificationTest {
         assertEquals(1, canvasStrokes.size)
         assertEquals("b", canvasStrokes[0].id)
 
-        // Undo delete
+        // Undo delete - validates Z-order restoration
         history.undo()
         assertEquals(3, canvasStrokes.size)
+        assertEquals("a", canvasStrokes[0].id)
+        assertEquals("b", canvasStrokes[1].id)
+        assertEquals("c", canvasStrokes[2].id)
 
         // Redo delete
         history.redo()

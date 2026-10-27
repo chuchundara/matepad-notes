@@ -229,12 +229,14 @@ object PdfExporter {
         val pageDims = calculatePageDimensions(bounds, margin = margin)
 
         val document = PdfDocument()
+        var page: PdfDocument.Page? = null
         try {
             val pageInfo = PdfDocument.PageInfo.Builder(pageDims.width, pageDims.height, 1).create()
-            val page = document.startPage(pageInfo)
+            val activePage = document.startPage(pageInfo)
+            page = activePage
 
             drawStrokesToCanvas(
-                canvas = page.canvas,
+                canvas = activePage.canvas,
                 strokes = strokes,
                 bounds = bounds,
                 margin = margin,
@@ -242,10 +244,22 @@ object PdfExporter {
                 backgroundColor = backgroundColor
             )
 
-            document.finishPage(page)
+            document.finishPage(activePage)
+            page = null
             document.writeTo(outputStream)
         } finally {
-            document.close()
+            if (page != null) {
+                try {
+                    document.finishPage(page)
+                } catch (_: IllegalStateException) {
+                    // Page may already be closed or in invalid state
+                }
+            }
+            try {
+                document.close()
+            } catch (_: IllegalStateException) {
+                // Guard against IllegalStateException on unclosed pages
+            }
         }
     }
 

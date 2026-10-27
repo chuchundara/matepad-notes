@@ -99,4 +99,19 @@ class StrokeBinarySerializerTest {
             StrokeBinarySerializer.deserialize(invalidBytes)
         }
     }
+
+    @Test
+    fun testNegativeCountThrows() {
+        val byteStream = java.io.ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(byteStream).use { gzip ->
+            java.io.DataOutputStream(gzip).use { out ->
+                out.writeInt(0x4E4F5445)
+                out.writeInt(1)
+                out.writeInt(-5) // Negative stroke count
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            StrokeBinarySerializer.deserialize(byteStream.toByteArray())
+        }
+    }
 }

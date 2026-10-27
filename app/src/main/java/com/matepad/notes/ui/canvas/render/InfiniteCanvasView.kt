@@ -18,6 +18,8 @@ import com.matepad.notes.domain.model.Stroke
 import com.matepad.notes.domain.model.StrokePoint
 import com.matepad.notes.domain.model.ToolType
 import com.matepad.notes.domain.spatial.QuadTree
+import com.matepad.notes.domain.tool.LassoSelection
+import com.matepad.notes.domain.tool.StrokeEraser
 import com.matepad.notes.ui.canvas.input.CanvasGestureListener
 import com.matepad.notes.ui.canvas.input.InputEvent
 import com.matepad.notes.ui.canvas.input.StylusInputClassifier
@@ -76,6 +78,12 @@ class InfiniteCanvasView @JvmOverloads constructor(
     var onViewportChanged: ((ViewportTransform) -> Unit)? = null
     var onToolChanged: ((ToolType) -> Unit)? = null
     var onStrokeErased: ((Stroke) -> Unit)? = null
+    var onStrokesErasedWithIndices: ((List<Pair<Int, Stroke>>) -> Unit)? = null
+    var onLassoSelectionChanged: ((List<Stroke>) -> Unit)? = null
+
+    // Selected strokes for lasso tool
+    var selectedStrokes: List<Stroke> = emptyList()
+        private set
 
     // Touch and gesture classification pipeline
     val gestureListener: CanvasGestureListener = CanvasGestureListener(
@@ -188,21 +196,30 @@ class InfiniteCanvasView @JvmOverloads constructor(
             }
             event.isEnd -> {
                 activeStrokePoints.add(strokePoint)
-                if (activeStrokePoints.isNotEmpty()) {
-                    val bounds = StrokeMeshGenerator.computeBounds(activeStrokePoints, currentBaseWidth)
-                    val stroke = Stroke(
-                        id = UUID.randomUUID().toString(),
-                        toolType = currentTool,
-                        color = currentColor,
-                        baseWidth = currentBaseWidth,
-                        points = activeStrokePoints.toList(),
-                        bounds = bounds
-                    )
-                    addStroke(stroke)
-                    onStrokeCompleted?.invoke(stroke)
+                if (currentTool == ToolType.LASSO) {
+                    val lassoPoints = activeStrokePoints.map { PointF(it.x, it.y) }
+                    val selected = LassoSelection.findSelectedStrokes(quadTree, lassoPoints)
+                    selectedStrokes = selected
+                    onLassoSelectionChanged?.invoke(selected)
+                    activeStrokePoints.clear()
+                    redraw()
+                } else {
+                    if (activeStrokePoints.isNotEmpty()) {
+                        val bounds = StrokeMeshGenerator.computeBounds(activeStrokePoints, currentBaseWidth)
+                        val stroke = Stroke(
+                            id = UUID.randomUUID().toString(),
+                            toolType = currentTool,
+                            color = currentColor,
+                            baseWidth = currentBaseWidth,
+                            points = activeStrokePoints.toList(),
+                            bounds = bounds
+                        )
+                        addStroke(stroke)
+                        onStrokeCompleted?.invoke(stroke)
+                    }
+                    activeStrokePoints.clear()
+                    frontBufferedRenderer?.commit()
                 }
-                activeStrokePoints.clear()
-                frontBufferedRenderer?.commit()
             }
             else -> {
                 val prevPoint = activeStrokePoints.lastOrNull()
@@ -232,7 +249,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
             ViewportTransform.MIN_SCALE,
             ViewportTransform.MAX_SCALE
         )
-        viewportTransform = prev.panBy(event.panX, event.panY).withScale(newScale)
+        viewportTransform = prev.panBy(event.panX, event.panY).withScaleAt(newScale, event.focalPoint)
         onViewportChanged?.invoke(viewportTransform)
         redraw()
     }
@@ -328,6 +345,25 @@ class InfiniteCanvasView @JvmOverloads constructor(
         for (stroke in sortedStrokes) {
             if (stroke.toolType != ToolType.HIGHLIGHTER) {
                 drawCommittedStroke(canvas, stroke)
+            }
+        }
+
+        // Highlight lasso-selected strokes
+        if (selectedStrokes.isNotEmpty()) {
+            val selectionPaint = Paint().apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 2f / viewportTransform.scale
+                color = 0xFF2196F3.toInt()
+                isAntiAlias = true
+            }
+            for (selected in selectedStrokes) {
+                canvas.drawRect(
+                    selected.bounds.left,
+                    selected.bounds.top,
+                    selected.bounds.right,
+                    selected.bounds.bottom,
+                    selectionPaint
+                )
             }
         }
 
@@ -472,13 +508,25 @@ class InfiniteCanvasView @JvmOverloads constructor(
     fun setStrokes(newStrokes: List<Stroke>) {
         strokes.clear()
         strokes.addAll(newStrokes)
+        selectedStrokes = emptyList()
         rebuildQuadTree()
         redraw()
     }
 
     fun clearCanvas() {
         strokes.clear()
+        selectedStrokes = emptyList()
         quadTree.clear()
+        redraw()
+    }
+
+    fun restoreStrokesWithIndices(indexedStrokes: List<Pair<Int, Stroke>>) {
+        val sorted = indexedStrokes.sortedBy { it.first }
+        for ((index, stroke) in sorted) {
+            val safeIndex = index.coerceIn(0, strokes.size)
+            strokes.add(safeIndex, stroke)
+        }
+        rebuildQuadTree()
         redraw()
     }
 
@@ -489,27 +537,26 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     fun eraseAt(worldPoint: PointF, eraseRadius: Float = currentBaseWidth * 3f) {
-        val eraseBounds = RectF(
-            worldPoint.x - eraseRadius,
-            worldPoint.y - eraseRadius,
-            worldPoint.x + eraseRadius,
-            worldPoint.y + eraseRadius
-        )
-        val candidates = quadTree.query(eraseBounds)
-        val toRemove = candidates.filter { stroke ->
-            stroke.bounds.intersects(eraseBounds) && stroke.points.any { p ->
-                val dx = p.x - worldPoint.x
-                val dy = p.y - worldPoint.y
-                (dx * dx + dy * dy) <= (eraseRadius * eraseRadius)
-            }
-        }
+        val toRemove = StrokeEraser.findIntersectingStrokes(quadTree, worldPoint, eraseRadius)
 
         if (toRemove.isNotEmpty()) {
+            val toRemoveWithIndices = toRemove.mapNotNull { stroke ->
+                val idx = strokes.indexOf(stroke)
+                if (idx >= 0) idx to stroke else null
+            }
             strokes.removeAll(toRemove.toSet())
+            if (selectedStrokes.isNotEmpty()) {
+                val removedSet = toRemove.toSet()
+                selectedStrokes = selectedStrokes.filterNot { it in removedSet }
+            }
             rebuildQuadTree()
             redraw()
-            for (stroke in toRemove) {
-                onStrokeErased?.invoke(stroke)
+            if (onStrokesErasedWithIndices != null) {
+                onStrokesErasedWithIndices?.invoke(toRemoveWithIndices)
+            } else {
+                for (stroke in toRemove) {
+                    onStrokeErased?.invoke(stroke)
+                }
             }
         }
     }

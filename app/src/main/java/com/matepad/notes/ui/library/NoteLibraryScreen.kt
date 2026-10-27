@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.matepad.notes.data.local.entity.FolderEntity
 import com.matepad.notes.data.local.entity.NoteEntity
+import kotlinx.coroutines.launch
 
 /**
  * Stateful Tablet Note Library Screen connected to [LibraryViewModel].
@@ -78,13 +80,16 @@ fun NoteLibraryScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     NoteLibraryScreen(
         state = state,
         onNoteClick = onNoteClick,
         onCreateNote = { title, folderId, gridStyle ->
-            val noteId = viewModel.createNote(title, folderId, gridStyle)
-            onNoteClick(noteId)
+            coroutineScope.launch {
+                val noteId = viewModel.createNote(title, folderId, gridStyle)
+                onNoteClick(noteId)
+            }
         },
         onDeleteNote = { noteId ->
             viewModel.deleteNote(noteId)

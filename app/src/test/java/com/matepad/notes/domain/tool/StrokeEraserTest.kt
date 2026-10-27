@@ -149,4 +149,22 @@ class StrokeEraserTest {
         assertFalse(StrokeEraser.isStrokeHit(emptyStroke, PointF(0f, 0f), eraserRadius = 10f))
         assertFalse(StrokeEraser.isStrokeHit(emptyStroke, PointF(0f, 0f), PointF(10f, 10f), eraserRadius = 10f))
     }
+
+    @Test
+    fun testHitSegmentBetweenDistantEndpoints() {
+        val longSegmentStroke = Stroke(
+            id = "long-seg",
+            toolType = ToolType.PEN,
+            color = 0,
+            baseWidth = 2f,
+            points = listOf(StrokePoint(0f, 0f), StrokePoint(1000f, 0f)),
+            bounds = RectF(-1f, -1f, 1001f, 1f)
+        )
+
+        // Point is at (500, 1), perpendicular distance is 1.
+        // Distance to endpoints is 500. With eraserRadius = 5, neither endpoint is touched,
+        // but segment hit-testing finds the stroke.
+        val hit = StrokeEraser.isStrokeHit(longSegmentStroke, PointF(500f, 1f), eraserRadius = 5f)
+        assertTrue(hit)
+    }
 }
