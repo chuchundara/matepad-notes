@@ -9,6 +9,14 @@ class QuadTree<T>(
     private val level: Int = 0,
     private val boundsExtractor: (T) -> RectF
 ) {
+    constructor(boundary: RectF, boundsExtractor: (T) -> RectF) : this(
+        boundary = boundary,
+        maxObjects = 8,
+        maxLevels = 6,
+        level = 0,
+        boundsExtractor = boundsExtractor
+    )
+
     private val items = mutableListOf<T>()
     private var subnodes: Array<QuadTree<T>>? = null
 
