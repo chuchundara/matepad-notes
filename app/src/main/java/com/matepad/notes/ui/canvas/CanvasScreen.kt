@@ -76,17 +76,6 @@ internal class CanvasDeleteStrokesCommand(
     private val deletedStrokesWithIndices: List<Pair<Int, Stroke>>,
     private val canvasView: InfiniteCanvasView
 ) : CanvasCommand {
-    constructor(
-        deletedStrokes: List<Stroke>,
-        canvasView: InfiniteCanvasView
-    ) : this(
-        deletedStrokesWithIndices = deletedStrokes.mapNotNull { stroke ->
-            val idx = canvasView.strokes.indexOf(stroke)
-            if (idx >= 0) idx to stroke else null
-        },
-        canvasView = canvasView
-    )
-
     private var isFirstExecution = true
 
     override fun execute() {
@@ -413,7 +402,9 @@ fun CanvasScreen(
                         }
 
                         onStrokeErased = { stroke ->
-                            commandHistory.execute(CanvasDeleteStrokesCommand(listOf(stroke), this))
+                            val idx = strokes.indexOf(stroke)
+                            val indexed = if (idx >= 0) listOf(idx to stroke) else emptyList()
+                            commandHistory.execute(CanvasDeleteStrokesCommand(indexed, this))
                             uiState = uiState.copy(
                                 canUndo = commandHistory.canUndo,
                                 canRedo = commandHistory.canRedo,

@@ -21,26 +21,17 @@ class AddStrokeCommand(
 }
 
 class DeleteStrokesCommand(
-    val deletedStrokesWithIndices: List<Pair<Int, Stroke>>,
+    val deletedStrokes: List<Stroke>,
     val targetList: MutableList<Stroke>
 ) : CanvasCommand {
 
-    constructor(
-        deletedStrokes: List<Stroke>,
-        targetList: MutableList<Stroke>
-    ) : this(
-        deletedStrokesWithIndices = deletedStrokes.mapNotNull { stroke ->
-            val idx = targetList.indexOf(stroke)
-            if (idx >= 0) idx to stroke else null
-        },
-        targetList = targetList
-    )
-
-    val deletedStrokes: List<Stroke>
-        get() = deletedStrokesWithIndices.map { it.second }
+    val deletedStrokesWithIndices: List<Pair<Int, Stroke>> = deletedStrokes.mapNotNull { stroke ->
+        val idx = targetList.indexOf(stroke)
+        if (idx >= 0) idx to stroke else null
+    }
 
     override fun execute() {
-        val toRemove = deletedStrokesWithIndices.map { it.second }.toSet()
+        val toRemove = deletedStrokes.toSet()
         targetList.removeAll(toRemove)
     }
 
