@@ -70,6 +70,7 @@ val PresetInkColors = listOf(
  * left- and right-handed stylus users, as well as floating anywhere over the canvas.
  *
  * Features:
+ * - Dedicated drag handle area preventing accidental gesture interception on tool buttons
  * - Direct tool selection: Pen, Highlighter, Stroke Eraser, Lasso Selection
  * - History navigation: Undo and Redo
  * - Ink customization: 6 preset colors and variable stroke width slider
@@ -93,17 +94,7 @@ fun FloatingToolbar(
     val isVertical = state.dockEdge == ToolbarDockEdge.LEFT || state.dockEdge == ToolbarDockEdge.RIGHT
 
     Surface(
-        modifier = modifier
-            .then(
-                if (onDrag != null) {
-                    Modifier.pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            onDrag(dragAmount)
-                        }
-                    }
-                } else Modifier
-            ),
+        modifier = modifier,
         shape = RoundedCornerShape(24.dp),
         tonalElevation = 6.dp,
         shadowElevation = 8.dp,
@@ -115,13 +106,29 @@ fun FloatingToolbar(
                 horizontalAlignment = Alignment.CenterVertically,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Drag handle
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag toolbar",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp)
-                )
+                // Dedicated drag handle box
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .then(
+                            if (onDrag != null) {
+                                Modifier.pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        onDrag(dragAmount)
+                                    }
+                                }
+                            } else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag toolbar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
                 // Tool buttons
                 ToolButton(
@@ -186,13 +193,29 @@ fun FloatingToolbar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Drag handle
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag toolbar",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp)
-                )
+                // Dedicated drag handle box
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .then(
+                            if (onDrag != null) {
+                                Modifier.pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        onDrag(dragAmount)
+                                    }
+                                }
+                            } else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag toolbar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
                 // Tool buttons
                 ToolButton(
