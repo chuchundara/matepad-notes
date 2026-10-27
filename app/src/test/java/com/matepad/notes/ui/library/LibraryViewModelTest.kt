@@ -295,7 +295,7 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun testStandaloneInMemoryModeWithoutDao() {
+    fun testStandaloneInMemoryModeWithoutDao() = runTest {
         // Test in-memory behavior when noteDao is null
         val viewModel = LibraryViewModel(noteDao = null)
 

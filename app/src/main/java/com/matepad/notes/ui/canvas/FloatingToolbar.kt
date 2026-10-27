@@ -23,8 +23,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.LineWeight
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -165,11 +165,11 @@ fun FloatingToolbar(
 
                 // Undo / Redo
                 IconButton(onClick = onUndo, enabled = state.canUndo) {
-                    Icon(Icons.Default.Undo, contentDescription = "Undo")
+                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
                 }
 
                 IconButton(onClick = onRedo, enabled = state.canRedo) {
-                    Icon(Icons.Default.Redo, contentDescription = "Redo")
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
                 }
 
                 HorizontalDivider(
@@ -314,11 +314,11 @@ fun FloatingToolbar(
 
                 // Undo / Redo
                 IconButton(onClick = onUndo, enabled = state.canUndo) {
-                    Icon(Icons.Default.Undo, contentDescription = "Undo")
+                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
                 }
 
                 IconButton(onClick = onRedo, enabled = state.canRedo) {
-                    Icon(Icons.Default.Redo, contentDescription = "Redo")
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
                 }
 
                 VerticalDivider(
