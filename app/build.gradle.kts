@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.matepad.notes"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.matepad.notes"
