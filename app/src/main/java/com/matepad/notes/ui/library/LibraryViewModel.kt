@@ -44,7 +44,10 @@ open class LibraryViewModel(
 ) : ViewModel() {
 
     private val scope: CoroutineScope = coroutineScope
-        ?: runCatching { viewModelScope }.getOrElse { CoroutineScope(Dispatchers.Unconfined) }
+        ?: runCatching {
+            Dispatchers.Main
+            viewModelScope
+        }.getOrElse { CoroutineScope(Dispatchers.Unconfined) }
 
     private val _manualNotes = MutableStateFlow<List<NoteEntity>>(emptyList())
     private val _manualFolders = MutableStateFlow<List<FolderEntity>>(emptyList())

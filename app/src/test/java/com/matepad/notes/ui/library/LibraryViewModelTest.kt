@@ -297,7 +297,9 @@ class LibraryViewModelTest {
     @Test
     fun testStandaloneInMemoryModeWithoutDao() = runTest {
         // Test in-memory behavior when noteDao is null
-        val viewModel = LibraryViewModel(noteDao = null)
+        val testDispatcher = UnconfinedTestDispatcher(testScheduler)
+        val testScope = CoroutineScope(testDispatcher)
+        val viewModel = LibraryViewModel(noteDao = null, coroutineScope = testScope)
 
         val noteId = viewModel.createNote(title = "Draft Note", gridStyle = "LINES")
         assertEquals(1, viewModel.uiState.value.notes.size)
