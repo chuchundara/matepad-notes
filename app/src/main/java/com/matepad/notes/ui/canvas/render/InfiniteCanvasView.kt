@@ -164,6 +164,12 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun handleDrawEvent(event: InputEvent.Draw) {
+        // If eraser tool is currently active in UI or toggled, pen tip draws act as erasures
+        if (currentTool == ToolType.STROKE_ERASER || currentTool == ToolType.SEGMENT_ERASER) {
+            handleEraseEvent(InputEvent.Erase(event.point, isStart = event.isStart, isEnd = event.isEnd))
+            return
+        }
+
         val worldPoint = viewportTransform.screenToWorld(PointF(event.point.x, event.point.y))
         val strokePoint = StrokePoint(worldPoint.x, worldPoint.y, event.point.pressure, event.point.tilt)
 
@@ -290,7 +296,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     /**
-     * Renders the complete multi-buffered frame, querying visible strokes from [QuadTree].
+     * Renders the complete multi-buffered frame, querying visible strokes from [QuadTree]
+     * while preserving chronological creation Z-order to prevent visual popping.
      */
     private fun renderMultiBufferedScene(canvas: Canvas, bufferWidth: Int, bufferHeight: Int) {
         canvas.drawColor(canvasBackgroundColor)
@@ -306,18 +313,19 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
         drawGrid(canvas, visibleBounds)
 
-        // Viewport culling query
+        // Viewport culling query preserved in chronological creation Z-order
         val visibleStrokes = quadTree.query(visibleBounds)
+        val sortedStrokes = strokes.filter { it in visibleStrokes }
 
         // Highlighters rendered first so ink stays on top
-        for (stroke in visibleStrokes) {
+        for (stroke in sortedStrokes) {
             if (stroke.toolType == ToolType.HIGHLIGHTER) {
                 drawCommittedStroke(canvas, stroke)
             }
         }
 
         // Regular pens and other strokes
-        for (stroke in visibleStrokes) {
+        for (stroke in sortedStrokes) {
             if (stroke.toolType != ToolType.HIGHLIGHTER) {
                 drawCommittedStroke(canvas, stroke)
             }
@@ -332,12 +340,24 @@ class InfiniteCanvasView @JvmOverloads constructor(
         strokePaint.reset()
         strokePaint.isAntiAlias = true
 
+        // Compute dynamic stroke width from point pressures to match front-buffer appearance
+        val avgPressure = if (stroke.points.isNotEmpty()) {
+            var sum = 0f
+            for (p in stroke.points) {
+                sum += p.pressure
+            }
+            sum / stroke.points.size
+        } else {
+            0.5f
+        }
+        val dynamicWidth = stroke.baseWidth * (0.3f + 1.4f * avgPressure)
+
         when (stroke.toolType) {
             ToolType.HIGHLIGHTER -> {
                 strokePaint.style = Paint.Style.STROKE
                 strokePaint.strokeCap = Paint.Cap.SQUARE
                 strokePaint.strokeJoin = Paint.Join.ROUND
-                strokePaint.strokeWidth = stroke.baseWidth * 2.5f
+                strokePaint.strokeWidth = dynamicWidth * 2.5f
                 val alphaColor = (stroke.color and 0x00FFFFFF) or 0x66000000
                 strokePaint.color = alphaColor
                 strokePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
@@ -346,7 +366,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 strokePaint.style = Paint.Style.STROKE
                 strokePaint.strokeCap = Paint.Cap.ROUND
                 strokePaint.strokeJoin = Paint.Join.ROUND
-                strokePaint.strokeWidth = stroke.baseWidth
+                strokePaint.strokeWidth = dynamicWidth
                 strokePaint.color = stroke.color
                 strokePaint.xfermode = null
             }
@@ -354,7 +374,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
         if (stroke.points.size == 1) {
             val p = stroke.points[0]
-            val radius = stroke.baseWidth / 2f
+            val radius = dynamicWidth / 2f
             strokePaint.style = Paint.Style.FILL
             canvas.drawCircle(p.x, p.y, radius, strokePaint)
             return
@@ -368,7 +388,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
         if (gridStyle == GridStyle.NONE) return
 
         val effectiveScale = viewportTransform.scale
-        var step = gridSpacing
+        if (gridSpacing <= 0f || effectiveScale <= 0f) return
+
+        var step = max(1f, gridSpacing)
         while (step * effectiveScale < 16f) {
             step *= 2f
         }
@@ -425,7 +447,10 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        renderMultiBufferedScene(canvas, width, height)
+        // Only execute fallback rendering if CanvasFrontBufferedRenderer is inactive
+        if (frontBufferedRenderer == null) {
+            renderMultiBufferedScene(canvas, width, height)
+        }
     }
 
     // Public Canvas API
@@ -480,8 +505,10 @@ class InfiniteCanvasView @JvmOverloads constructor(
         }
 
         if (toRemove.isNotEmpty()) {
+            strokes.removeAll(toRemove.toSet())
+            rebuildQuadTree()
+            redraw()
             for (stroke in toRemove) {
-                removeStroke(stroke)
                 onStrokeErased?.invoke(stroke)
             }
         }
